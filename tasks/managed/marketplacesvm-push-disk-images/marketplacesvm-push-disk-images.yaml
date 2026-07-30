@@ -224,17 +224,29 @@ spec:
             DESTINATION="${DISK_IMGS_DIR}/${IMG_NAME}"
             mkdir -p "${DESTINATION}"
             DOWNLOAD_DIR=$(mktemp -d -p /var/workdir)
-            cd "$DOWNLOAD_DIR"
             # oras has very limited support for selecting the right auth entry,
             # so create a custom auth file with just one entry
             AUTH_FILE=$(mktemp)
             select-oci-auth "${PULLSPEC}" > "$AUTH_FILE"
-            oras pull --registry-config "$AUTH_FILE" "$PULLSPEC"
             NUM_MAPPED_FILES=$(jq '.staged.files | length' <<< "${COMPONENT}")
             for ((i = 0; i < NUM_MAPPED_FILES; i++)); do
                 FILE=$(jq -c --arg i "$i" '.staged.files[$i|tonumber]' <<< "$COMPONENT")
                 SOURCE=$(jq -er '.source' <<< "$FILE")
                 FILENAME=$(jq -er '.filename' <<< "$FILE")
+
+                # Extract architecture from filename and map to OCI platform naming
+                BUILD_ARCH=$(echo "${FILENAME}" | sed -e 's/\.[.a-zA-Z0-9]*$//')
+                BUILD_ARCH="${BUILD_ARCH##*-}"
+                OCI_ARCH="${BUILD_ARCH}"
+                case "${BUILD_ARCH}" in
+                    x86_64)  OCI_ARCH="amd64" ;;
+                    aarch64) OCI_ARCH="arm64" ;;
+                esac
+
+                # Pull the disk image for this specific architecture from the OCI image index
+                cd "${DOWNLOAD_DIR}"
+                rm -f "${DOWNLOAD_DIR:?}"/* 2>/dev/null || true
+                oras pull --platform "linux/${OCI_ARCH}" --registry-config "$AUTH_FILE" "$PULLSPEC"
 
                 # Fail early if the source file pulled by ORAS does not exist
                 if [ ! -f "${SOURCE}" ]; then
@@ -253,9 +265,6 @@ spec:
                     echo " and filename value: $FILENAME. Failing..." >&2
                     exit 1
                 fi
-
-                BUILD_ARCH=${FILENAME%.*}   # Rstrip extension
-                BUILD_ARCH=${BUILD_ARCH##*-}  # Lstrip on - to get the arch
 
                 case "${FILENAME}" in
                     *.vhd) image_type="VHD" ;;

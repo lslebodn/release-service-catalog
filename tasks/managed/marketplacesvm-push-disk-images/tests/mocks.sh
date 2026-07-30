@@ -14,10 +14,10 @@ function select-oci-auth() {
 
 function oras() {
     echo Mock oras called with: $*
-    echo $* > "$(params.dataDir)/mock_oras.txt"
+    echo $* >> "$(params.dataDir)/mock_oras.txt"
     pwd > "$(params.dataDir)/mock_oras_workdir.txt"
 
-    if [[ "$*" != "pull --registry-config"* ]]; then
+    if [[ "$*" != "pull --platform"* ]]; then
         echo Error: Unexpected call to oras
         exit 1
     fi
